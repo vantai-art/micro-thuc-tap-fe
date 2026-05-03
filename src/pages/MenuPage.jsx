@@ -11,18 +11,38 @@ function MenuPage() {
     const [selectedCategory, setSelectedCategory] = useState(null);
     const [showFilters, setShowFilters] = useState(true);
 
-    // ── Lấy danh sách category unique từ products (BE không có /api/categories) ──
+    // ── Lấy danh sách category unique từ products, kèm ảnh đại diện ──
     const categories = useMemo(() => {
-        const seen = new Set();
-        const result = [];
+        const catMap = new Map(); // Dùng Map để lưu { name, coverImage, productCount }
+
         products.forEach(p => {
             const name = (typeof p.category === 'string' ? p.category : p.category?.name) || 'Khác';
-            if (!seen.has(name)) {
-                seen.add(name);
-                result.push({ name });
+
+            if (!catMap.has(name)) {
+                // Lưu danh mục mới, chưa có ảnh đại diện
+                catMap.set(name, {
+                    name,
+                    coverImage: null,
+                    productCount: 0,
+                    productsWithImage: 0
+                });
+            }
+
+            const cat = catMap.get(name);
+            cat.productCount++;
+
+            // Nếu sản phẩm có ảnh và danh mục chưa có ảnh đại diện, lấy ảnh này
+            if (p.imageUrl && !cat.coverImage) {
+                cat.coverImage = p.imageUrl;
+            }
+
+            if (p.imageUrl) {
+                cat.productsWithImage++;
             }
         });
-        return result;
+
+        // Chuyển Map thành array và sắp xếp theo số lượng sản phẩm giảm dần
+        return Array.from(catMap.values()).sort((a, b) => b.productCount - a.productCount);
     }, [products]);
 
     // ── Lọc sản phẩm theo danh mục ──────────────────────────────
@@ -43,6 +63,16 @@ function MenuPage() {
         note.textContent = `✅ Đã thêm "${product.name}" vào giỏ hàng!`;
         document.body.appendChild(note);
         setTimeout(() => note.remove(), 3000);
+    };
+
+    // Helper để lấy màu sắc cho danh mục (dùng cho border, gradient)
+    const getCategoryColor = (name) => {
+        const colors = ['#f59e0b', '#3b82f6', '#22c55e', '#8b5cf6', '#ef4444', '#06b6d4', '#f97316', '#ec4899', '#14b8a6', '#a855f7'];
+        let hash = 0;
+        for (let i = 0; i < name.length; i++) {
+            hash = (hash * 31 + name.charCodeAt(i)) & 0xffffffff;
+        }
+        return colors[Math.abs(hash) % colors.length];
     };
 
     return (
@@ -76,7 +106,7 @@ function MenuPage() {
                     </button>
                 </div>
 
-                {/* Categories */}
+                {/* Categories với ảnh đại diện */}
                 {showFilters && (
                     <div className="mb-12 animate-fade-in">
                         <h2 className="text-2xl font-bold text-white mb-6 text-center">DANH MỤC SẢN PHẨM</h2>
@@ -91,8 +121,15 @@ function MenuPage() {
                                     className={`relative overflow-hidden rounded-lg transition-all transform hover:scale-105 ${selectedCategory === 'all' ? 'ring-4 ring-amber-500' : 'hover:ring-2 hover:ring-amber-400'
                                         }`}
                                 >
-                                    <div className="h-32 flex items-center justify-center bg-gradient-to-br from-amber-600 to-amber-800">
-                                        <Package className="w-12 h-12 text-white" />
+                                    <div className="h-32 flex items-center justify-center bg-gradient-to-br from-amber-600 to-amber-800 relative overflow-hidden">
+                                        {/* Background pattern */}
+                                        <div className="absolute inset-0 opacity-20">
+                                            <div className="absolute inset-0" style={{
+                                                backgroundImage: 'radial-gradient(circle at 20% 40%, rgba(255,255,255,0.2) 1px, transparent 1px)',
+                                                backgroundSize: '20px 20px'
+                                            }}></div>
+                                        </div>
+                                        <Package className="w-12 h-12 text-white relative z-10" />
                                     </div>
                                     <div className="bg-gray-800 p-3 text-center">
                                         <span className="text-white font-semibold">Tất Cả</span>
@@ -100,12 +137,9 @@ function MenuPage() {
                                     </div>
                                 </button>
 
-                                {/* Các danh mục lấy từ products */}
+                                {/* Các danh mục với ảnh đại diện từ sản phẩm đầu tiên */}
                                 {categories.map((cat) => {
-                                    const count = products.filter(p => {
-                                        const c = typeof p.category === 'string' ? p.category : p.category?.name;
-                                        return c === cat.name;
-                                    }).length;
+                                    const catColor = getCategoryColor(cat.name);
                                     return (
                                         <button
                                             key={cat.name}
@@ -113,12 +147,56 @@ function MenuPage() {
                                             className={`relative overflow-hidden rounded-lg transition-all transform hover:scale-105 ${selectedCategory === cat.name ? 'ring-4 ring-amber-500' : 'hover:ring-2 hover:ring-amber-400'
                                                 }`}
                                         >
-                                            <div className="h-32 flex items-center justify-center bg-gradient-to-br from-gray-700 to-gray-800">
-                                                <Package className="w-12 h-12 text-amber-400/70" />
+                                            {/* Ảnh đại diện hoặc fallback */}
+                                            <div className="h-32 relative overflow-hidden bg-gradient-to-br from-gray-700 to-gray-800">
+                                                {cat.coverImage ? (
+                                                    <>
+                                                        <img
+                                                            src={cat.coverImage}
+                                                            alt={cat.name}
+                                                            className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-110"
+                                                            onError={(e) => {
+                                                                e.target.style.display = 'none';
+                                                                e.target.parentElement.innerHTML = `
+                                                                    <div class="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-gray-700 to-gray-800">
+                                                                        <div class="text-4xl">📦</div>
+                                                                    </div>
+                                                                `;
+                                                            }}
+                                                        />
+                                                        <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent"></div>
+                                                        {/* Badge số ảnh */}
+                                                        {cat.productsWithImage > 0 && (
+                                                            <div className="absolute top-2 right-2 bg-black/60 backdrop-blur-sm text-white text-xs px-2 py-1 rounded-full">
+                                                                📷 {cat.productsWithImage}
+                                                            </div>
+                                                        )}
+                                                    </>
+                                                ) : (
+                                                    <div className="absolute inset-0 flex items-center justify-center">
+                                                        <Package className="w-10 h-10" style={{ color: `${catColor}80` }} />
+                                                    </div>
+                                                )}
+
+                                                {/* Gradient overlay để text dễ đọc */}
+                                                <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent"></div>
                                             </div>
-                                            <div className="bg-gray-800 p-3 text-center">
-                                                <span className="text-white font-semibold text-sm">{cat.name}</span>
-                                                <span className="block text-gray-400 text-xs mt-1">{count} sản phẩm</span>
+
+                                            <div className="bg-gray-800 p-3 text-center relative">
+                                                <span className="text-white font-semibold text-sm block truncate" title={cat.name}>
+                                                    {cat.name}
+                                                </span>
+                                                <span className="block text-gray-400 text-xs mt-1">
+                                                    {cat.productCount} sản phẩm
+                                                </span>
+                                                {/* Indicator bar */}
+                                                <div
+                                                    className="absolute bottom-0 left-0 h-0.5 transition-all duration-300"
+                                                    style={{
+                                                        width: selectedCategory === cat.name ? '100%' : '0%',
+                                                        backgroundColor: catColor
+                                                    }}
+                                                ></div>
                                             </div>
                                         </button>
                                     );
@@ -132,16 +210,18 @@ function MenuPage() {
                 <div className="text-center mb-8">
                     {selectedCategory === null ? (
                         <h3 className="text-xl text-gray-400">
-                            Vui lòng chọn một danh mục để xem sản phẩm
+                            ✨ Vui lòng chọn một danh mục để xem sản phẩm ✨
                         </h3>
                     ) : (
-                        <h3 className="text-xl text-gray-300">
-                            Đang xem:{' '}
+                        <div className="flex items-center justify-center gap-3 flex-wrap">
+                            <span className="text-gray-300 text-lg">Đang xem:</span>
                             <span className="text-amber-500 font-bold text-2xl">
-                                {selectedCategory === 'all' ? 'Tất cả' : selectedCategory}
+                                {selectedCategory === 'all' ? 'Tất cả sản phẩm' : selectedCategory}
                             </span>
-                            {' '}<span className="text-gray-500 text-base">({displayProducts.length} sản phẩm)</span>
-                        </h3>
+                            <span className="text-gray-500 text-base">
+                                ({displayProducts.length} sản phẩm)
+                            </span>
+                        </div>
                     )}
                 </div>
 
@@ -167,26 +247,28 @@ function MenuPage() {
                         {selectedCategory === null ? (
                             <div className="text-center py-16 text-gray-400">
                                 <Package className="w-16 h-16 mx-auto mb-3 text-gray-600" />
-                                <p className="text-xl">Hãy chọn một danh mục để xem sản phẩm</p>
+                                <p className="text-xl">🎯 Hãy chọn một danh mục để xem sản phẩm</p>
+                                <p className="text-sm mt-2 text-gray-500">Click vào danh mục phía trên để bắt đầu</p>
                             </div>
                         ) : displayProducts.length === 0 ? (
                             <div className="text-center py-16 text-gray-400">
                                 <Package className="w-16 h-16 mx-auto mb-3 text-gray-600" />
-                                <p className="text-xl">Không có sản phẩm nào trong danh mục này</p>
+                                <p className="text-xl">😢 Không có sản phẩm nào trong danh mục này</p>
+                                <p className="text-sm mt-2 text-gray-500">Hãy thử chọn danh mục khác nhé!</p>
                             </div>
                         ) : (
                             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                                 {displayProducts.map((product) => (
                                     <div
                                         key={product.id}
-                                        className="bg-gray-900 rounded-lg overflow-hidden border border-gray-800 hover:border-amber-500 transition-all transform hover:scale-105"
+                                        className="bg-gray-900 rounded-lg overflow-hidden border border-gray-800 hover:border-amber-500 transition-all transform hover:scale-105 hover:shadow-xl"
                                     >
                                         {/* Image */}
                                         <div className="relative h-56 overflow-hidden bg-gray-800 group">
                                             <img
                                                 src={product.imageUrl || 'https://via.placeholder.com/400x400/1f2937/d97706?text=No+Image'}
                                                 alt={product.name}
-                                                className="w-full h-full object-cover"
+                                                className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-110"
                                                 onError={(e) => {
                                                     e.target.src = 'https://via.placeholder.com/400x400/1f2937/d97706?text=No+Image';
                                                 }}
@@ -200,7 +282,7 @@ function MenuPage() {
                                                     Thêm Vào Giỏ
                                                 </button>
                                             </div>
-                                            <span className="absolute top-3 right-3 bg-amber-500 text-white px-3 py-1 rounded-full text-sm font-semibold">
+                                            <span className="absolute top-3 right-3 bg-amber-500 text-white px-3 py-1 rounded-full text-sm font-semibold shadow-lg">
                                                 {(typeof product.category === 'string' ? product.category : product.category?.name) || 'Khác'}
                                             </span>
                                         </div>
@@ -211,7 +293,7 @@ function MenuPage() {
                                                 {product.name}
                                             </h3>
                                             <p className="text-gray-400 text-sm mb-3 line-clamp-2 h-10">
-                                                {product.description || 'Chưa có mô tả'}
+                                                {product.description || product.discription || 'Chưa có mô tả'}
                                             </p>
 
                                             {/* Rating */}

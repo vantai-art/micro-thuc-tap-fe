@@ -1,27 +1,21 @@
 // src/pages/admin/AdminDashboard.jsx
-// ✅ Đã sửa đúng với BE:
-//   - GET /products        → List<Product> { productName, price, category(string), availability }
-//   - GET /order           → List<Order>   { total, status, orderedDate, user }
-//   - GET /users           → List<User>    { role: { roleName } }
-//   - GET /api/payments    → { data: List<Payment> } hoặc List<Payment>  { status, amount }
-//   - KHÔNG dùng JWT token — BE dùng session-based auth
-//   - Category = string từ product.category — tổng hợp từ products
-
 import React, { useState, useEffect, useCallback } from 'react'
 import {
     Package, ShoppingBag, Users, DollarSign,
     TrendingUp, TrendingDown, RefreshCw,
     BarChart3, PieChart, Clock, CheckCircle,
-    XCircle, Truck, AlertCircle, FolderOpen
+    XCircle, Truck, AlertCircle, FolderOpen,
+    Calendar, Download, Eye
 } from 'lucide-react'
 import http from '../../services/api'
 
 // ─── Helpers ────────────────────────────────────────────────────
 const fmt = (n) => {
+    if (!n) return '0'
     if (n >= 1_000_000_000) return (n / 1_000_000_000).toFixed(1) + 'B'
     if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M'
     if (n >= 1_000) return (n / 1_000).toFixed(1) + 'K'
-    return String(n)
+    return String(Math.round(n))
 }
 
 const ORDER_STATUS = {
@@ -32,36 +26,32 @@ const ORDER_STATUS = {
     CANCELLED: { label: 'Đã hủy', color: '#ef4444', bg: 'rgba(239,68,68,0.15)' },
 }
 
-const DAYS_MAP = { '7days': 7, '30days': 30, '90days': 90 }
-
-// ─── Simple bar chart (pure CSS) ────────────────────────────────
-function BarChart({ data, valueKey, color, label }) {
+// ─── Bar Chart Component ────────────────────────────────────────
+function BarChart({ data, valueKey, color, label, formatValue = (v) => v }) {
     const max = Math.max(...data.map(d => d[valueKey]), 1)
     return (
-        <div style={{ display: 'flex', alignItems: 'flex-end', gap: 4, height: 140, padding: '0 4px' }}>
+        <div style={{ display: 'flex', alignItems: 'flex-end', gap: 4, height: 180, padding: '0 4px' }}>
             {data.map((d, i) => (
                 <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
                     <div style={{
                         position: 'relative', width: '100%',
-                        height: `${Math.max((d[valueKey] / max) * 110, d[valueKey] > 0 ? 4 : 0)}px`,
+                        height: `${Math.max((d[valueKey] / max) * 150, d[valueKey] > 0 ? 4 : 0)}px`,
                         background: color, borderRadius: '4px 4px 0 0',
                         transition: 'height 0.4s ease',
                         cursor: 'default',
                     }}
-                        title={`${d.date}: ${typeof d[valueKey] === 'number' && d[valueKey] > 999 ? d[valueKey].toLocaleString('vi-VN') + 'đ' : d[valueKey]}`}
+                        title={`${d.label}: ${formatValue(d[valueKey])}`}
                     />
-                    {data.length <= 14 && (
-                        <span style={{ fontSize: 9, color: '#6b7280', writingMode: 'vertical-rl', transform: 'rotate(180deg)', height: 28 }}>
-                            {d.date}
-                        </span>
-                    )}
+                    <span style={{ fontSize: 9, color: '#6b7280', writingMode: 'vertical-rl', transform: 'rotate(180deg)', height: 30 }}>
+                        {d.label}
+                    </span>
                 </div>
             ))}
         </div>
     )
 }
 
-// ─── Donut chart (SVG) ───────────────────────────────────────────
+// ─── Donut chart ────────────────────────────────────────────────
 function DonutChart({ segments, size = 120 }) {
     const r = 40, cx = 60, cy = 60
     const circumference = 2 * Math.PI * r
@@ -108,7 +98,7 @@ function DonutChart({ segments, size = 120 }) {
     )
 }
 
-// ─── Stat card ───────────────────────────────────────────────────
+// ─── Stat card ──────────────────────────────────────────────────
 function StatCard({ icon, title, value, sub, change, color }) {
     const up = parseFloat(change) >= 0
     return (
@@ -157,7 +147,9 @@ export default function AdminDashboard() {
     })
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState(null)
-    const [range, setRange] = useState('30days')
+    const [viewType, setViewType] = useState('day') // 'day', 'month', 'year'
+    const [selectedDate, setSelectedDate] = useState(new Date())
+    const [revenueData, setRevenueData] = useState([])
 
     // ── Fetch tất cả data từ BE ──────────────────────────────
     const fetchAll = useCallback(async () => {
@@ -174,7 +166,6 @@ export default function AdminDashboard() {
             const get = (res) => {
                 if (res.status !== 'fulfilled') return []
                 const d = res.value.data
-                // BE payments có thể trả { data: [...] } hoặc list thẳng
                 if (Array.isArray(d)) return d
                 if (Array.isArray(d?.data)) return d.data
                 return []
@@ -195,77 +186,125 @@ export default function AdminDashboard() {
 
     useEffect(() => { fetchAll() }, [fetchAll])
 
-    // ── Tính toán thống kê ────────────────────────────────────
-    const days = DAYS_MAP[range]
-    const cutoff = new Date()
-    cutoff.setDate(cutoff.getDate() - days)
-    const prevCutoff = new Date()
-    prevCutoff.setDate(prevCutoff.getDate() - days * 2)
+    // ── Tính toán doanh thu theo view type ────────────────────
+    useEffect(() => {
+        const { orders } = data
+        const paidOrders = orders.filter(o => ['PAID', 'DELIVERED', 'SHIPPING'].includes(o.status))
 
+        if (viewType === 'day') {
+            // Doanh thu theo ngày trong tháng
+            const year = selectedDate.getFullYear()
+            const month = selectedDate.getMonth()
+            const daysInMonth = new Date(year, month + 1, 0).getDate()
+
+            const dailyRevenue = Array.from({ length: daysInMonth }, (_, i) => {
+                const day = i + 1
+                const date = new Date(year, month, day)
+                const dateStr = date.toISOString().split('T')[0]
+
+                const revenue = paidOrders
+                    .filter(o => {
+                        const orderDate = (o.orderedDate || o.createdAt || '').toString().split('T')[0]
+                        return orderDate === dateStr
+                    })
+                    .reduce((sum, o) => sum + Number(o.total || 0), 0)
+
+                return {
+                    label: `${day}`,
+                    value: revenue,
+                    fullDate: dateStr
+                }
+            })
+
+            setRevenueData(dailyRevenue)
+        }
+        else if (viewType === 'month') {
+            // Doanh thu theo tháng trong năm
+            const year = selectedDate.getFullYear()
+            const monthlyRevenue = Array.from({ length: 12 }, (_, i) => {
+                const month = i
+                const revenue = paidOrders
+                    .filter(o => {
+                        const orderDate = new Date(o.orderedDate || o.createdAt || 0)
+                        return orderDate.getFullYear() === year && orderDate.getMonth() === month
+                    })
+                    .reduce((sum, o) => sum + Number(o.total || 0), 0)
+
+                return {
+                    label: `T${i + 1}`,
+                    value: revenue,
+                    fullMonth: `${year}-${String(i + 1).padStart(2, '0')}`
+                }
+            })
+
+            setRevenueData(monthlyRevenue)
+        }
+        else if (viewType === 'year') {
+            // Doanh thu theo năm
+            const currentYear = new Date().getFullYear()
+            const startYear = currentYear - 5
+            const yearlyRevenue = Array.from({ length: 6 }, (_, i) => {
+                const year = startYear + i
+                const revenue = paidOrders
+                    .filter(o => {
+                        const orderDate = new Date(o.orderedDate || o.createdAt || 0)
+                        return orderDate.getFullYear() === year
+                    })
+                    .reduce((sum, o) => sum + Number(o.total || 0), 0)
+
+                return {
+                    label: `${year}`,
+                    value: revenue,
+                    fullYear: year
+                }
+            })
+
+            setRevenueData(yearlyRevenue)
+        }
+    }, [data.orders, viewType, selectedDate])
+
+    // ── Tính toán thống kê tổng quan ───────────────────────────
     const { products, orders, users, payments } = data
 
-    // Customers = user có role ROLE_USER hoặc không có role
     const customers = users.filter(u => {
         const role = u.role?.roleName || u.role || ''
         return role === 'ROLE_USER' || role === 'USER' || role === ''
     })
 
-    // Revenue = tổng order.total của đơn PAID + DELIVERED
     const paidOrders = orders.filter(o => ['PAID', 'DELIVERED', 'SHIPPING'].includes(o.status))
     const totalRevenue = paidOrders.reduce((s, o) => s + Number(o.total || 0), 0)
 
-    // Recent vs previous period
-    const recentOrders = orders.filter(o => {
-        const d = new Date(o.orderedDate || o.createdAt || 0)
-        return d >= cutoff
-    })
-    const prevOrders = orders.filter(o => {
-        const d = new Date(o.orderedDate || o.createdAt || 0)
-        return d >= prevCutoff && d < cutoff
-    })
-    const orderChange = prevOrders.length > 0
-        ? (((recentOrders.length - prevOrders.length) / prevOrders.length) * 100).toFixed(0)
-        : recentOrders.length > 0 ? 100 : 0
-
-    // Revenue change
-    const recentRev = recentOrders
-        .filter(o => ['PAID', 'DELIVERED', 'SHIPPING'].includes(o.status))
-        .reduce((s, o) => s + Number(o.total || 0), 0)
-    const prevRev = prevOrders
-        .filter(o => ['PAID', 'DELIVERED', 'SHIPPING'].includes(o.status))
-        .reduce((s, o) => s + Number(o.total || 0), 0)
-    const revChange = prevRev > 0
-        ? (((recentRev - prevRev) / prevRev) * 100).toFixed(0)
-        : recentRev > 0 ? 100 : 0
-
-    // ── Chart data (đơn hàng + doanh thu theo ngày) ──────────
-    const chartDays = Math.min(days, 30)
-    const chartData = Array.from({ length: chartDays }, (_, i) => {
-        const d = new Date()
-        d.setDate(d.getDate() - (chartDays - 1 - i))
-        const ds = d.toISOString().split('T')[0]
-        const label = d.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' })
-        const dayOrders = orders.filter(o => {
-            const od = (o.orderedDate || o.createdAt || '').toString().split('T')[0]
-            return od === ds
+    // Doanh thu tháng hiện tại
+    const currentMonthRevenue = paidOrders
+        .filter(o => {
+            const orderDate = new Date(o.orderedDate || o.createdAt || 0)
+            const now = new Date()
+            return orderDate.getMonth() === now.getMonth() && orderDate.getFullYear() === now.getFullYear()
         })
-        return {
-            date: label,
-            orders: dayOrders.length,
-            revenue: dayOrders
-                .filter(o => ['PAID', 'DELIVERED', 'SHIPPING'].includes(o.status))
-                .reduce((s, o) => s + Number(o.total || 0), 0)
-        }
-    })
+        .reduce((s, o) => s + Number(o.total || 0), 0)
 
-    // ── Trạng thái đơn hàng (donut) ──────────────────────────
+    // Doanh thu tháng trước
+    const lastMonthRevenue = paidOrders
+        .filter(o => {
+            const orderDate = new Date(o.orderedDate || o.createdAt || 0)
+            const now = new Date()
+            const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1)
+            return orderDate.getMonth() === lastMonth.getMonth() && orderDate.getFullYear() === lastMonth.getFullYear()
+        })
+        .reduce((s, o) => s + Number(o.total || 0), 0)
+
+    const monthChange = lastMonthRevenue > 0
+        ? (((currentMonthRevenue - lastMonthRevenue) / lastMonthRevenue) * 100).toFixed(0)
+        : currentMonthRevenue > 0 ? 100 : 0
+
+    // ── Trạng thái đơn hàng ───────────────────────────────────
     const statusCounts = Object.entries(ORDER_STATUS).map(([key, cfg]) => ({
         label: cfg.label,
         value: orders.filter(o => o.status === key).length,
         color: cfg.color,
     })).filter(s => s.value > 0)
 
-    // ── Categories từ products (string) ──────────────────────
+    // ── Categories từ products ─────────────────────────────────
     const catMap = {}
     products.forEach(p => {
         const cat = (typeof p.category === 'string' ? p.category : p.category?.name) || 'Khác'
@@ -277,10 +316,47 @@ export default function AdminDashboard() {
 
     const CAT_COLORS = ['#f59e0b', '#3b82f6', '#22c55e', '#8b5cf6', '#ef4444', '#06b6d4']
 
-    // ── Recent orders (5 đơn gần nhất) ───────────────────────
+    // ── Recent orders ─────────────────────────────────────────
     const recentTop5 = [...orders]
-        .sort((a, b) => b.id - a.id)
+        .sort((a, b) => new Date(b.orderedDate || b.createdAt || 0) - new Date(a.orderedDate || a.createdAt || 0))
         .slice(0, 5)
+
+    // ── Navigation handlers ───────────────────────────────────
+    const handlePrevious = () => {
+        const newDate = new Date(selectedDate)
+        if (viewType === 'day') {
+            newDate.setMonth(newDate.getMonth() - 1)
+        } else if (viewType === 'month') {
+            newDate.setFullYear(newDate.getFullYear() - 1)
+        } else if (viewType === 'year') {
+            newDate.setFullYear(newDate.getFullYear() - 1)
+        }
+        setSelectedDate(newDate)
+    }
+
+    const handleNext = () => {
+        const newDate = new Date(selectedDate)
+        if (viewType === 'day') {
+            newDate.setMonth(newDate.getMonth() + 1)
+        } else if (viewType === 'month') {
+            newDate.setFullYear(newDate.getFullYear() + 1)
+        } else if (viewType === 'year') {
+            newDate.setFullYear(newDate.getFullYear() + 1)
+        }
+        setSelectedDate(newDate)
+    }
+
+    const getPeriodTitle = () => {
+        if (viewType === 'day') {
+            return `Tháng ${selectedDate.getMonth() + 1}/${selectedDate.getFullYear()}`
+        } else if (viewType === 'month') {
+            return `Năm ${selectedDate.getFullYear()}`
+        } else {
+            return `${selectedDate.getFullYear()} - ${selectedDate.getFullYear() + 5}`
+        }
+    }
+
+    const totalPeriodRevenue = revenueData.reduce((sum, item) => sum + item.value, 0)
 
     // ── Loading / Error ───────────────────────────────────────
     if (loading) return (
@@ -310,7 +386,7 @@ export default function AdminDashboard() {
         <div style={{ padding: 24, color: '#f9fafb', fontFamily: 'inherit' }}>
 
             {/* ── Header ── */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 28 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 28, flexWrap: 'wrap', gap: 16 }}>
                 <div>
                     <h1 style={{ fontSize: 26, fontWeight: 700, margin: 0, marginBottom: 4 }}>Bảng Điều Khiển</h1>
                     <p style={{ color: '#6b7280', fontSize: 13, margin: 0 }}>
@@ -318,14 +394,6 @@ export default function AdminDashboard() {
                     </p>
                 </div>
                 <div style={{ display: 'flex', gap: 10 }}>
-                    <select value={range} onChange={e => setRange(e.target.value)} style={{
-                        background: '#1f2937', color: '#f9fafb', border: '1px solid #374151',
-                        borderRadius: 8, padding: '8px 14px', fontSize: 13, outline: 'none', cursor: 'pointer'
-                    }}>
-                        <option value="7days">7 ngày</option>
-                        <option value="30days">30 ngày</option>
-                        <option value="90days">90 ngày</option>
-                    </select>
                     <button onClick={fetchAll} style={{
                         background: '#1f2937', color: '#f9fafb', border: '1px solid #374151',
                         borderRadius: 8, padding: '8px 14px', fontSize: 13, cursor: 'pointer',
@@ -338,7 +406,7 @@ export default function AdminDashboard() {
             </div>
 
             {/* ── Stat cards ── */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16, marginBottom: 24 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 16, marginBottom: 24 }}>
                 <StatCard
                     icon={<Package size={20} />}
                     title="Tổng sản phẩm"
@@ -350,8 +418,7 @@ export default function AdminDashboard() {
                     icon={<ShoppingBag size={20} />}
                     title="Đơn hàng"
                     value={orders.length}
-                    sub={`${recentOrders.length} trong ${days} ngày qua`}
-                    change={orderChange}
+                    sub={`${paidOrders.length} đơn đã thanh toán`}
                     color="#22c55e"
                 />
                 <StatCard
@@ -363,48 +430,113 @@ export default function AdminDashboard() {
                 />
                 <StatCard
                     icon={<DollarSign size={20} />}
-                    title="Doanh thu"
+                    title="Tổng doanh thu"
                     value={fmt(totalRevenue) + 'đ'}
                     sub={`${paidOrders.length} đơn đã thanh toán`}
-                    change={revChange}
                     color="#f59e0b"
+                />
+                <StatCard
+                    icon={<Calendar size={20} />}
+                    title="Doanh thu tháng này"
+                    value={fmt(currentMonthRevenue) + 'đ'}
+                    sub={`So với tháng trước`}
+                    change={monthChange}
+                    color="#06b6d4"
                 />
             </div>
 
-            {/* ── Charts row ── */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 24 }}>
-                {/* Đơn hàng theo ngày */}
-                <div style={{ background: '#1f2937', border: '1px solid #374151', borderRadius: 12, padding: 20 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
-                        <BarChart3 size={18} color="#22c55e" />
-                        <span style={{ fontWeight: 600, fontSize: 15 }}>Đơn hàng / ngày</span>
-                        <span style={{ marginLeft: 'auto', fontSize: 11, color: '#6b7280' }}>{chartDays} ngày gần nhất</span>
+            {/* ── Revenue Chart Section ── */}
+            <div style={{ background: '#1f2937', border: '1px solid #374151', borderRadius: 12, padding: 24, marginBottom: 24 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, flexWrap: 'wrap', gap: 16 }}>
+                    <div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                            <DollarSign size={20} color="#f59e0b" />
+                            <h2 style={{ fontSize: 18, fontWeight: 600, margin: 0 }}>Báo Cáo Doanh Thu</h2>
+                        </div>
+                        <div style={{ display: 'flex', gap: 12 }}>
+                            <button
+                                onClick={() => setViewType('day')}
+                                style={{
+                                    padding: '6px 16px',
+                                    borderRadius: 6,
+                                    border: 'none',
+                                    cursor: 'pointer',
+                                    fontSize: 13,
+                                    fontWeight: 500,
+                                    background: viewType === 'day' ? '#f59e0b' : '#374151',
+                                    color: viewType === 'day' ? '#fff' : '#9ca3af'
+                                }}
+                            >
+                                Theo Ngày
+                            </button>
+                            <button
+                                onClick={() => setViewType('month')}
+                                style={{
+                                    padding: '6px 16px',
+                                    borderRadius: 6,
+                                    border: 'none',
+                                    cursor: 'pointer',
+                                    fontSize: 13,
+                                    fontWeight: 500,
+                                    background: viewType === 'month' ? '#f59e0b' : '#374151',
+                                    color: viewType === 'month' ? '#fff' : '#9ca3af'
+                                }}
+                            >
+                                Theo Tháng
+                            </button>
+                            <button
+                                onClick={() => setViewType('year')}
+                                style={{
+                                    padding: '6px 16px',
+                                    borderRadius: 6,
+                                    border: 'none',
+                                    cursor: 'pointer',
+                                    fontSize: 13,
+                                    fontWeight: 500,
+                                    background: viewType === 'year' ? '#f59e0b' : '#374151',
+                                    color: viewType === 'year' ? '#fff' : '#9ca3af'
+                                }}
+                            >
+                                Theo Năm
+                            </button>
+                        </div>
                     </div>
-                    <BarChart data={chartData} valueKey="orders" color="#22c55e" />
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8 }}>
-                        <span style={{ fontSize: 11, color: '#6b7280' }}>
-                            Tổng: <b style={{ color: '#f9fafb' }}>{recentOrders.length}</b> đơn
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                        <button onClick={handlePrevious} style={{
+                            background: '#374151', border: 'none', borderRadius: 6,
+                            padding: '6px 12px', cursor: 'pointer', color: '#f9fafb'
+                        }}>
+                            ◀
+                        </button>
+                        <span style={{ fontSize: 15, fontWeight: 600, minWidth: 120, textAlign: 'center' }}>
+                            {getPeriodTitle()}
                         </span>
-                        <span style={{ fontSize: 11, color: '#6b7280' }}>
-                            TB: <b style={{ color: '#f9fafb' }}>{chartDays > 0 ? (recentOrders.length / chartDays).toFixed(1) : 0}</b>/ngày
-                        </span>
+                        <button onClick={handleNext} style={{
+                            background: '#374151', border: 'none', borderRadius: 6,
+                            padding: '6px 12px', cursor: 'pointer', color: '#f9fafb'
+                        }}>
+                            ▶
+                        </button>
                     </div>
                 </div>
 
-                {/* Doanh thu theo ngày */}
-                <div style={{ background: '#1f2937', border: '1px solid #374151', borderRadius: 12, padding: 20 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
-                        <DollarSign size={18} color="#f59e0b" />
-                        <span style={{ fontWeight: 600, fontSize: 15 }}>Doanh thu / ngày</span>
-                        <span style={{ marginLeft: 'auto', fontSize: 11, color: '#6b7280' }}>{chartDays} ngày gần nhất</span>
+                <BarChart
+                    data={revenueData}
+                    valueKey="value"
+                    color="#f59e0b"
+                    formatValue={(v) => fmt(v) + 'đ'}
+                />
+
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 16, paddingTop: 16, borderTop: '1px solid #374151' }}>
+                    <div>
+                        <span style={{ fontSize: 12, color: '#6b7280' }}>Tổng doanh thu kỳ này: </span>
+                        <span style={{ fontSize: 20, fontWeight: 700, color: '#f59e0b' }}>{fmt(totalPeriodRevenue)}đ</span>
                     </div>
-                    <BarChart data={chartData} valueKey="revenue" color="#f59e0b" />
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8 }}>
-                        <span style={{ fontSize: 11, color: '#6b7280' }}>
-                            Kỳ này: <b style={{ color: '#f9fafb' }}>{fmt(recentRev)}đ</b>
-                        </span>
-                        <span style={{ fontSize: 11, color: revChange >= 0 ? '#22c55e' : '#ef4444' }}>
-                            {revChange >= 0 ? '▲' : '▼'} {Math.abs(revChange)}% so với kỳ trước
+                    <div>
+                        <span style={{ fontSize: 12, color: '#6b7280' }}>Trung bình: </span>
+                        <span style={{ fontSize: 14, fontWeight: 600, color: '#f9fafb' }}>
+                            {fmt(revenueData.length > 0 ? totalPeriodRevenue / revenueData.length : 0)}đ
                         </span>
                     </div>
                 </div>
@@ -424,6 +556,7 @@ export default function AdminDashboard() {
                         <div style={{ flex: 1 }}>
                             {Object.entries(ORDER_STATUS).map(([key, cfg]) => {
                                 const count = orders.filter(o => o.status === key).length
+                                if (count === 0) return null
                                 return (
                                     <div key={key} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
                                         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -508,7 +641,6 @@ export default function AdminDashboard() {
                     )}
                 </div>
             </div>
-
         </div>
     )
 }

@@ -1,12 +1,7 @@
-// src/App.js — FIX routing & auth guards
-// Nguyên nhân lỗi cũ:
-//   1. Dùng chung 1 localStorage key → admin login → user bị văng
-//   2. UserAuthGuard redirect admin → /admin (không cần thiết, gây nhầm lẫn)
-//   3. UserAuthPage redirect ROLE_ADMIN sang /admin (không nên ở trang user)
-//   4. StaffLoginPage.jsx chứa nhầm code StaffPage → /staff/login lỗi
-
+// src/App.js
 import React from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import StaffSettings from './pages/staff/StaffSettings'
 import { AppProvider, useApp } from './contexts/AppContext'
 
 import Header from './components/Header'
@@ -17,24 +12,22 @@ import ShopPage from './pages/ShopPage'
 import UserAuthPage from './pages/UserAuthPage'
 import CheckoutPage from './pages/CheckoutPage'
 import UserOrdersPage from './pages/UserOrdersPage'
+import UserSettings from './pages/UserSettings'
 
 import AdminLogin from './pages/admin/AdminLogin'
 import AdminLayoutWrapper from './pages/admin/AdminLayoutWrapper'
 
 import StaffLoginPage from './pages/staff/StaffLoginPage'
 import StaffPage from './pages/staff/StaffPage'
-import UserSettings from './pages/UserSettings'
+import { SocketProvider } from './contexts/SocketContext'
 
-// ─── Protected Route cho user thường ────────────────────────────
-// Dùng customerUser (không bị ảnh hưởng bởi admin/staff login)
+// ─── Protected Routes ────────────────────────────────────────────
 function ProtectedUserRoute({ children }) {
     const { customerUser } = useApp()
     if (!customerUser) return <Navigate to="/auth" replace />
     return children
 }
 
-// ─── Protected Route cho admin ──────────────────────────────────
-// Chỉ check adminUser — không bị ảnh hưởng bởi user/staff
 function ProtectedAdminRoute({ children }) {
     const { adminUser } = useApp()
     if (!adminUser) return <Navigate to="/admin/login" replace />
@@ -42,8 +35,6 @@ function ProtectedAdminRoute({ children }) {
     return children
 }
 
-// ─── Protected Route cho staff ──────────────────────────────────
-// Chỉ check staffUser
 function ProtectedStaffRoute({ children }) {
     const { staffUser } = useApp()
     if (!staffUser) return <Navigate to="/staff/login" replace />
@@ -53,22 +44,18 @@ function ProtectedStaffRoute({ children }) {
     return children
 }
 
-// ─── Guard cho /auth: chỉ redirect nếu customerUser đã login ────
-// KHÔNG redirect admin/staff → tránh conflict
 function UserAuthGuard({ children }) {
     const { customerUser } = useApp()
     if (customerUser) return <Navigate to="/" replace />
     return children
 }
 
-// ─── Guard cho /admin/login: redirect nếu adminUser đã login ────
 function AdminLoginGuard({ children }) {
     const { adminUser } = useApp()
     if (adminUser?.role === 'ROLE_ADMIN') return <Navigate to="/admin" replace />
     return children
 }
 
-// ─── Guard cho /staff/login: redirect nếu staffUser đã login ────
 function StaffLoginGuard({ children }) {
     const { staffUser } = useApp()
     if (staffUser?.role === 'ROLE_STAFF' || staffUser?.role === 'ROLE_ADMIN') {
@@ -81,7 +68,7 @@ function StaffLoginGuard({ children }) {
 function AppRoutes() {
     return (
         <>
-            {/* Header chỉ hiển thị trên trang user, ẩn ở admin/staff */}
+            {/* Header ẩn ở admin/staff */}
             <Routes>
                 <Route path="/admin/*" element={null} />
                 <Route path="/staff/*" element={null} />
@@ -94,7 +81,7 @@ function AppRoutes() {
                 <Route path="/menu" element={<MenuPage />} />
                 <Route path="/shop" element={<ShopPage />} />
 
-                {/* User auth — chỉ redirect nếu customerUser đã login */}
+                {/* User auth */}
                 <Route path="/auth" element={
                     <UserAuthGuard><UserAuthPage /></UserAuthGuard>
                 } />
@@ -106,24 +93,30 @@ function AppRoutes() {
                 <Route path="/my-orders" element={
                     <ProtectedUserRoute><UserOrdersPage /></ProtectedUserRoute>
                 } />
+                <Route path="/settings" element={
+                    <ProtectedUserRoute><UserSettings /></ProtectedUserRoute>
+                } />
 
                 {/* Admin login */}
                 <Route path="/admin/login" element={
                     <AdminLoginGuard><AdminLogin /></AdminLoginGuard>
                 } />
 
-                {/* Admin panel */}
+                {/* Admin panel — tất cả pages */}
                 <Route path="/admin" element={<ProtectedAdminRoute><AdminLayoutWrapper page="dashboard" /></ProtectedAdminRoute>} />
                 <Route path="/admin/dashboard" element={<ProtectedAdminRoute><AdminLayoutWrapper page="dashboard" /></ProtectedAdminRoute>} />
                 <Route path="/admin/products" element={<ProtectedAdminRoute><AdminLayoutWrapper page="products" /></ProtectedAdminRoute>} />
                 <Route path="/admin/categories" element={<ProtectedAdminRoute><AdminLayoutWrapper page="categories" /></ProtectedAdminRoute>} />
+                <Route path="/admin/tables" element={<ProtectedAdminRoute><AdminLayoutWrapper page="tables" /></ProtectedAdminRoute>} />
                 <Route path="/admin/orders" element={<ProtectedAdminRoute><AdminLayoutWrapper page="orders" /></ProtectedAdminRoute>} />
+                <Route path="/admin/revenue" element={<ProtectedAdminRoute><AdminLayoutWrapper page="revenue" /></ProtectedAdminRoute>} />
                 <Route path="/admin/users" element={<ProtectedAdminRoute><AdminLayoutWrapper page="users" /></ProtectedAdminRoute>} />
                 <Route path="/admin/staff" element={<ProtectedAdminRoute><AdminLayoutWrapper page="staff" /></ProtectedAdminRoute>} />
+                <Route path="/admin/activity" element={<ProtectedAdminRoute><AdminLayoutWrapper page="activity" /></ProtectedAdminRoute>} />
                 <Route path="/admin/promotions" element={<ProtectedAdminRoute><AdminLayoutWrapper page="promotions" /></ProtectedAdminRoute>} />
                 <Route path="/admin/settings" element={<ProtectedAdminRoute><AdminLayoutWrapper page="settings" /></ProtectedAdminRoute>} />
 
-                {/* Staff login */}
+                {/* Staff */}
                 <Route path="/staff/login" element={
                     <StaffLoginGuard><StaffLoginPage /></StaffLoginGuard>
                 } />
@@ -131,11 +124,10 @@ function AppRoutes() {
                     <ProtectedStaffRoute><StaffPage /></ProtectedStaffRoute>
                 } />
 
-                <Route path="/settings" element={<ProtectedUserRoute><UserSettings /></ProtectedUserRoute>
-                } />
-
-
                 {/* 404 */}
+                <Route path="/staff/settings" element={
+                    <ProtectedStaffRoute><StaffSettings /></ProtectedStaffRoute>
+                }/>
                 <Route path="*" element={
                     <div style={{
                         minHeight: '80vh', display: 'flex', alignItems: 'center',
@@ -160,7 +152,9 @@ export default function App() {
     return (
         <BrowserRouter>
             <AppProvider>
-                <AppRoutes />
+                <SocketProvider>
+                    <AppRoutes />
+                </SocketProvider>
             </AppProvider>
         </BrowserRouter>
     )

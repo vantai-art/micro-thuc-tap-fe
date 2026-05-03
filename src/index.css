@@ -1,3 +1,45 @@
+/* ─── THEME CSS VARIABLES ─────────────────────────────────────────
+   AppContext sets data-theme="dark"|"light" on <html>
+   All user-facing pages read these variables for theming.
+──────────────────────────────────────────────────────────────── */
+
+:root,
+[data-theme="dark"] {
+  --bg-base: #0a0a0a;
+  --bg-surface: #111111;
+  --bg-elevated: #161616;
+  --bg-card: #111111;
+  --border-color: #1e1e1e;
+  --border-subtle: #1a1a1a;
+  --text-primary: #f0ede6;
+  --text-secondary: #888880;
+  --text-muted: #555550;
+  --text-disabled: #333330;
+  --input-bg: #0a0a0a;
+  --input-bg-ro: #0d0d0d;
+  --hover-bg: rgba(255, 255, 255, 0.04);
+  --shadow-card: 0 4px 24px rgba(0, 0, 0, 0.5);
+  --overlay: rgba(0, 0, 0, 0.6);
+}
+
+[data-theme="light"] {
+  --bg-base: #f5f4f0;
+  --bg-surface: #ffffff;
+  --bg-elevated: #fafaf8;
+  --bg-card: #ffffff;
+  --border-color: #e5e3de;
+  --border-subtle: #eeece8;
+  --text-primary: #1a1814;
+  --text-secondary: #6b6860;
+  --text-muted: #a09e98;
+  --text-disabled: #cccac5;
+  --input-bg: #fafaf8;
+  --input-bg-ro: #f0ede8;
+  --hover-bg: rgba(0, 0, 0, 0.04);
+  --shadow-card: 0 4px 24px rgba(0, 0, 0, 0.08);
+  --overlay: rgba(0, 0, 0, 0.3);
+}
+
 body {
   margin: 0;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
@@ -5,6 +47,9 @@ body {
     sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  background: var(--bg-base);
+  color: var(--text-primary);
+  transition: background 0.25s ease, color 0.25s ease;
 }
 
 code {

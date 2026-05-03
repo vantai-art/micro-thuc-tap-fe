@@ -3,8 +3,10 @@
 //   - admin  → localStorage['admin_user']
 //   - staff  → localStorage['staff_user']
 //   - user   → localStorage['customer_user']
+// FIX: Tách giỏ hàng riêng cho staff và customer (staff_cart, customer_cart)
+// FIX: Global darkMode + themeColor — áp dụng toàn app qua CSS variables
 
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react'
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react'
 import axios from 'axios'
 
 const BASE_URL = 'http://localhost:8080'
@@ -15,10 +17,33 @@ const axiosInstance = axios.create({
     timeout: 10000,
 })
 
+// ─── Theme helpers ───────────────────────────────────────────────
+const THEME_KEY = 'app_darkMode'
+const COLOR_KEY = 'app_themeColor'
+const DEFAULT_COLOR = '#D97706'
+
+// Key theo userId để mỗi user có setting riêng
+const themeKey = (userId) => userId ? `app_darkMode_${userId}` : THEME_KEY
+const colorKey = (userId) => userId ? `app_themeColor_${userId}` : COLOR_KEY
+
+function applyTheme(darkMode, themeColor) {
+    const root = document.documentElement
+    root.style.setProperty('--theme-color', themeColor || DEFAULT_COLOR)
+    if (darkMode) {
+        root.classList.add('dark')
+        root.setAttribute('data-theme', 'dark')
+    } else {
+        root.classList.remove('dark')
+        root.setAttribute('data-theme', 'light')
+    }
+}
+
 // ─── Per-role storage keys ───────────────────────────────────────
-const KEY_ADMIN    = 'admin_user'
-const KEY_STAFF    = 'staff_user'
+const KEY_ADMIN = 'admin_user'
+const KEY_STAFF = 'staff_user'
 const KEY_CUSTOMER = 'customer_user'
+const KEY_STAFF_CART = 'staff_cart'
+const KEY_CUSTOMER_CART = 'customer_cart'
 
 const getStoredUser = (key) => {
     try { const r = localStorage.getItem(key); return r ? JSON.parse(r) : null }
@@ -28,12 +53,127 @@ const getStoredUser = (key) => {
 const AppCtx = createContext(null)
 
 export function AppProvider({ children }) {
-    const [adminUser,    setAdminUser]    = useState(() => getStoredUser(KEY_ADMIN))
-    const [staffUser,    setStaffUser]    = useState(() => getStoredUser(KEY_STAFF))
+    const [adminUser, setAdminUser] = useState(() => getStoredUser(KEY_ADMIN))
+    const [staffUser, setStaffUser] = useState(() => getStoredUser(KEY_STAFF))
     const [customerUser, setCustomerUser] = useState(() => getStoredUser(KEY_CUSTOMER))
 
-    // backward compat: user = customerUser
-    const user = customerUser
+    // ============================================
+    // 🎨 GLOBAL THEME — dark mode + accent color (per-user)
+    // ============================================
+    const [darkMode, setDarkModeState] = useState(() => {
+        try {
+            const stored = getStoredUser(KEY_CUSTOMER)
+            const key = stored?.id ? themeKey(stored.id) : THEME_KEY
+            return localStorage.getItem(key) === 'true'
+        } catch { return false }
+    })
+    const [themeColor, setThemeColorState] = useState(() => {
+        try {
+            const stored = getStoredUser(KEY_CUSTOMER)
+            const key = stored?.id ? colorKey(stored.id) : COLOR_KEY
+            return localStorage.getItem(key) || DEFAULT_COLOR
+        } catch { return DEFAULT_COLOR }
+    })
+
+    // Apply theme on mount + whenever state changes
+    useEffect(() => {
+        applyTheme(darkMode, themeColor)
+    }, [darkMode, themeColor])
+
+    // Khi customerUser thay đổi (login/logout) → load theme của user đó
+    useEffect(() => {
+        const userId = customerUser?.id
+        try {
+            const dm = localStorage.getItem(themeKey(userId)) === 'true'
+            const tc = localStorage.getItem(colorKey(userId)) || DEFAULT_COLOR
+            setDarkModeState(dm)
+            setThemeColorState(tc)
+        } catch { }
+    }, [customerUser?.id])
+
+    const setDarkMode = useCallback((val) => {
+        const userId = customerUser?.id
+        localStorage.setItem(themeKey(userId), String(val))
+        setDarkModeState(val)
+    }, [customerUser?.id])
+
+    const setThemeColor = useCallback((color) => {
+        const userId = customerUser?.id
+        localStorage.setItem(colorKey(userId), color)
+        setThemeColorState(color)
+    }, [customerUser?.id])
+
+    // ============================================
+    // 🛒 GIỎ HÀNG RIÊNG BIỆT CHO TỪNG ROLE
+    // ============================================
+    const [staffCart, setStaffCart] = useState(() => {
+        try {
+            const saved = localStorage.getItem(KEY_STAFF_CART)
+            return saved ? JSON.parse(saved) : []
+        } catch { return [] }
+    })
+
+    const [customerCart, setCustomerCart] = useState(() => {
+        try {
+            const saved = localStorage.getItem(KEY_CUSTOMER_CART)
+            return saved ? JSON.parse(saved) : []
+        } catch { return [] }
+    })
+
+    // Lưu vào localStorage khi thay đổi
+    useEffect(() => {
+        localStorage.setItem(KEY_STAFF_CART, JSON.stringify(staffCart))
+    }, [staffCart])
+
+    useEffect(() => {
+        localStorage.setItem(KEY_CUSTOMER_CART, JSON.stringify(customerCart))
+    }, [customerCart])
+
+    // Cart actions — dùng setStaffCart/setCustomerCart trực tiếp để tránh stale closure — dùng setStaffCart/setCustomerCart trực tiếp để tránh stale closure
+    const addToCart = useCallback((product, qty = 1) => {
+        const setter = staffUser ? setStaffCart : customerUser ? setCustomerCart : null
+        if (!setter) return
+        setter(prev => {
+            const existing = prev.find(i => i.id === product.id)
+            if (existing) {
+                return prev.map(i => i.id === product.id
+                    ? { ...i, quantity: i.quantity + qty }
+                    : i)
+            }
+            return [...prev, { ...product, quantity: qty }]
+        })
+    }, [staffUser, customerUser])
+
+    const removeFromCart = useCallback((id) => {
+        const setter = staffUser ? setStaffCart : customerUser ? setCustomerCart : null
+        if (!setter) return
+        setter(prev => prev.filter(i => i.id !== id))
+    }, [staffUser, customerUser])
+
+    const updateQuantity = useCallback((id, qty) => {
+        const setter = staffUser ? setStaffCart : customerUser ? setCustomerCart : null
+        if (!setter) return
+        if (qty <= 0) {
+            setter(prev => prev.filter(i => i.id !== id))
+        } else {
+            setter(prev => prev.map(i => i.id === id ? { ...i, quantity: qty } : i))
+        }
+    }, [staffUser, customerUser])
+
+    const clearCart = useCallback(() => {
+        if (staffUser) setStaffCart([])
+        else if (customerUser) setCustomerCart([])
+    }, [staffUser, customerUser])
+
+    // Computed values cho cart hiện tại — dùng useMemo để đảm bảo reactive
+    const cart = useMemo(() => {
+        if (staffUser) return staffCart
+        if (customerUser) return customerCart
+        return []
+    }, [staffUser, customerUser, staffCart, customerCart])
+
+    const cartTotal = useMemo(() => cart.reduce((s, i) => s + (i.price * i.quantity), 0), [cart])
+    const cartCount = useMemo(() => cart.reduce((s, i) => s + i.quantity, 0), [cart])
 
     // ── login: lưu đúng key theo role ─────────────────────────────
     const login = useCallback((userData) => {
@@ -58,12 +198,11 @@ export function AppProvider({ children }) {
         } else if (role === 'ROLE_STAFF') {
             localStorage.removeItem(KEY_STAFF)
             setStaffUser(null)
+            // KHÔNG xóa staff_cart để giữ lại khi login lại
         } else {
             localStorage.removeItem(KEY_CUSTOMER)
-            localStorage.removeItem('cartId')
+            localStorage.removeItem(KEY_CUSTOMER_CART)
             setCustomerUser(null)
-            setCart([])
-            setCartCount(0)
         }
     }, [])
 
@@ -71,19 +210,21 @@ export function AppProvider({ children }) {
         localStorage.removeItem(KEY_ADMIN)
         localStorage.removeItem(KEY_STAFF)
         localStorage.removeItem(KEY_CUSTOMER)
-        localStorage.removeItem('cartId')
-        setAdminUser(null); setStaffUser(null); setCustomerUser(null)
-        setCart([]); setCartCount(0)
+        localStorage.removeItem(KEY_STAFF_CART)
+        localStorage.removeItem(KEY_CUSTOMER_CART)
+        setAdminUser(null)
+        setStaffUser(null)
+        setCustomerUser(null)
     }, [])
 
     const isAdmin = adminUser?.role === 'ROLE_ADMIN'
     const isStaff = staffUser?.role === 'ROLE_STAFF'
-    const isUser  = customerUser?.role === 'ROLE_USER'
+    const isUser = customerUser?.role === 'ROLE_USER'
 
     // ── Products ──────────────────────────────────────────────────
     const [products, setProducts] = useState([])
-    const [loading, setLoading]   = useState(false)
-    const [error, setError]       = useState(null)
+    const [loading, setLoading] = useState(false)
+    const [error, setError] = useState(null)
 
     const fetchProducts = useCallback(async () => {
         setLoading(true); setError(null)
@@ -110,28 +251,6 @@ export function AppProvider({ children }) {
     // ── Tables ────────────────────────────────────────────────────
     const [tables, setTables] = useState([])
 
-    // ── Cart ──────────────────────────────────────────────────────
-    const [cart, setCart]           = useState([])
-    const [cartCount, setCartCount] = useState(0)
-
-    const addToCart = useCallback((product, qty = 1) => {
-        setCart(prev => {
-            const ex = prev.find(i => i.id === product.id)
-            if (ex) return prev.map(i => i.id === product.id ? { ...i, quantity: i.quantity + qty } : i)
-            return [...prev, { ...product, quantity: qty }]
-        })
-    }, [])
-
-    const removeFromCart  = useCallback((id)       => setCart(prev => prev.filter(i => i.id !== id)), [])
-    const updateQuantity  = useCallback((id, qty)  => {
-        if (qty <= 0) setCart(prev => prev.filter(i => i.id !== id))
-        else setCart(prev => prev.map(i => i.id === id ? { ...i, quantity: qty } : i))
-    }, [])
-    const clearCart = useCallback(() => setCart([]), [])
-    const cartTotal = cart.reduce((s, i) => s + i.price * i.quantity, 0)
-
-    useEffect(() => { setCartCount(cart.reduce((s, i) => s + i.quantity, 0)) }, [cart])
-
     // ── Toast ──────────────────────────────────────────────────────
     const [toast, setToast] = useState(null)
     const showToast = useCallback((msg, type = 'success') => {
@@ -139,7 +258,7 @@ export function AppProvider({ children }) {
         setTimeout(() => setToast(null), 3000)
     }, [])
 
-    // ── Create order ───────────────────────────────────────────────
+    // ── Create order (cho customer) ────────────────────────────────
     const createOrder = useCallback(async () => {
         if (!customerUser) throw new Error('Chưa đăng nhập')
         if (cart.length === 0) throw new Error('Giỏ hàng trống')
@@ -151,16 +270,82 @@ export function AppProvider({ children }) {
         return res.data
     }, [customerUser, cart, clearCart, showToast])
 
+    // ─── Create table order (cho staff) ────────────────────────────
+    const createTableOrder = useCallback(async (tableId, customerName, items) => {
+        const res = await axiosInstance.post('/order/table', {
+            tableId,
+            customerName: customerName || 'Khách lẻ',
+            items: items.map(i => ({
+                productId: i.id,
+                productName: i.name,
+                price: i.price,
+                quantity: i.quantity
+            }))
+        })
+        return res.data?.data || res.data
+    }, [axiosInstance])
+
+    // Interceptor để log (debug)
+    axiosInstance.interceptors.response.use(
+        response => {
+            console.log('Response for', response.config.url, ':', response.status)
+            return response
+        },
+        error => {
+            console.error('Error:', error.response?.status, error.response?.config?.url)
+            return Promise.reject(error)
+        }
+    )
+
+    // Expose setCart cho customerCart (dùng trong SocketContext để sync real-time)
+    const setCart = useCallback((cartOrUpdater) => {
+        setCustomerCart(cartOrUpdater)
+    }, [])
+
     const value = {
-        user, adminUser, staffUser, customerUser,
-        login, logout, logoutAll,
-        isAdmin, isStaff, isUser,
-        products, loading, error, fetchProducts,
-        tables, setTables,
-        cart, cartCount, setCartCount, cartTotal,
-        addToCart, removeFromCart, updateQuantity, clearCart, createOrder,
+        // User info
+        user: customerUser,
+        adminUser,
+        staffUser,
+        customerUser,
+        login,
+        logout,
+        logoutAll,
+        isAdmin,
+        isStaff,
+        isUser,
+        // 🎨 Theme (global — dùng ở mọi trang)
+        darkMode,
+        themeColor,
+        setDarkMode,
+        setThemeColor,
+        // Products
+        products,
+        loading,
+        error,
+        fetchProducts,
+        // Tables
+        tables,
+        setTables,
+        // Cart - dùng chung interface nhưng data riêng theo role
+        cart,
+        cartCount,
+        cartTotal,
+        addToCart,
+        removeFromCart,
+        updateQuantity,
+        clearCart,
+        // Expose setCart trực tiếp để SocketContext sync real-time
+        setCart,
+        // Orders
+        createOrder,
+        createTableOrder,
+        // Utils
         showToast,
         axiosInstance,
+        // Expose riêng cho debug (nếu cần)
+        staffCart,
+        customerCart,
     }
 
     return (
@@ -171,8 +356,8 @@ export function AppProvider({ children }) {
     )
 }
 
-export const useApp        = () => useContext(AppCtx)
-export const useAppContext  = () => useContext(AppCtx)
+export const useApp = () => useContext(AppCtx)
+export const useAppContext = () => useContext(AppCtx)
 
 function Toast({ toast }) {
     const colors = { success: '#3d8b5e', error: '#c0392b', info: '#2980b9', warning: '#d4a853' }
