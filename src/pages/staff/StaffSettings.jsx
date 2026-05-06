@@ -4,9 +4,9 @@
 
 import React, { useState, useEffect, useCallback } from 'react'
 import {
-    Save, Bell, Palette, Loader2, AlertCircle, CheckCircle2,
-    User, Monitor, Volume2, Printer, Grid3X3, List,
-    Lock, Eye, EyeOff, X, Info, RefreshCw, ChevronLeft
+    Save, Palette, AlertCircle, CheckCircle2,
+    User, Monitor, Printer, Grid3X3, List,
+    X, Info, RefreshCw, ChevronLeft
 } from 'lucide-react'
 import http from '../../services/api'
 import { useNavigate } from 'react-router-dom'
@@ -61,9 +61,7 @@ function Toast({ msg, type, onClose }) {
 const TABS = [
     { id: 'profile', label: 'Hồ sơ', icon: User, color: '#f59e0b' },
     { id: 'pos', label: 'Cài đặt POS', icon: Monitor, color: '#3b82f6' },
-    { id: 'notify', label: 'Thông báo', icon: Bell, color: '#10b981' },
     { id: 'appearance', label: 'Giao diện', icon: Palette, color: '#8b5cf6' },
-    { id: 'security', label: 'Bảo mật', icon: Lock, color: '#ef4444' },
 ]
 
 export default function StaffSettings({ onClose }) {
@@ -83,15 +81,9 @@ export default function StaffSettings({ onClose }) {
         defaultLayout: 'grid', autoPrintReceipt: false, soundOnOrder: true,
         itemsPerPage: 12, defaultPaymentMethod: 'CASH', showTableMap: true, tablesPerRow: 4
     })
-    const [notify, setNotify] = useState({
-        emailNotifications: true, orderNotifications: true,
-        newOrderAlerts: true, soundEnabled: true, lowStockAlerts: false
-    })
     const [appear, setAppear] = useState({
         themeColor: '#D97706', darkMode: false, fontSize: 'medium', language: 'vi'
     })
-    const [pwForm, setPwForm] = useState({ newPassword: '', confirmPassword: '' })
-    const [showPw, setShowPw] = useState({})
     const [loading, setLoading] = useState(true)
     const [saving, setSaving] = useState(false)
     const [toast, setToast] = useState(null)
@@ -128,7 +120,6 @@ export default function StaffSettings({ onClose }) {
 
             // Áp settings vào từng state
             setPos(p => ({ ...p, ...rawSettings }))
-            setNotify(p => ({ ...p, ...rawSettings }))
             setAppear(p => ({ ...p, ...rawSettings }))
         } catch (e) {
             showToast('Lỗi tải cài đặt: ' + e.message, 'error')
@@ -141,7 +132,7 @@ export default function StaffSettings({ onClose }) {
         setSaving(true)
         try {
             // Gộp tất cả settings lại thành 1 object
-            const allSettings = { ...pos, ...notify, ...appear }
+            const allSettings = { ...pos, ...appear }
 
             if (staffId) {
                 // PUT /settings/staff/{staffId}  body: { settings: {...} }
@@ -158,19 +149,6 @@ export default function StaffSettings({ onClose }) {
         } finally { setSaving(false) }
     }
 
-    const handleChangePassword = async () => {
-        if (!pwForm.newPassword || pwForm.newPassword.length < 6) {
-            showToast('Mật khẩu phải ít nhất 6 ký tự', 'error'); return
-        }
-        if (pwForm.newPassword !== pwForm.confirmPassword) {
-            showToast('Mật khẩu không khớp', 'error'); return
-        }
-        try {
-            await http.put(`/users/${staffId}`, { userPassword: pwForm.newPassword })
-            setPwForm({ newPassword: '', confirmPassword: '' })
-            showToast('✅ Đổi mật khẩu thành công')
-        } catch { showToast('❌ Lỗi đổi mật khẩu', 'error') }
-    }
 
     const handleReset = async () => {
         if (!window.confirm('Đặt lại tất cả cài đặt về mặc định?')) return
@@ -321,30 +299,6 @@ export default function StaffSettings({ onClose }) {
                     </div>
                 </>)}
 
-                {/* THÔNG BÁO */}
-                {activeTab === 'notify' && (
-                    <div style={S.section}>
-                        <SectionHeader icon={Bell} title="Cài đặt thông báo" color="#10b981" />
-                        <div style={S.sectionBody}>
-                            {[
-                                { key: 'newOrderAlerts', label: 'Thông báo đơn hàng mới', sub: 'Nhận cảnh báo khi có đơn hàng từ online' },
-                                { key: 'orderNotifications', label: 'Cập nhật trạng thái đơn', sub: 'Thông báo khi trạng thái đơn thay đổi' },
-                                { key: 'emailNotifications', label: 'Gửi email tổng kết ca', sub: 'Nhận email tổng kết doanh thu cuối ca' },
-                                { key: 'lowStockAlerts', label: 'Cảnh báo hàng sắp hết', sub: 'Thông báo khi sản phẩm sắp hết trong ngày' },
-                                { key: 'soundEnabled', label: 'Bật âm thanh thông báo', sub: 'Phát âm thanh khi có thông báo mới' },
-                            ].map(item => (
-                                <div key={item.key} style={S.toggle}>
-                                    <div>
-                                        <div style={{ fontSize: 13, color: '#e5e7eb' }}>{item.label}</div>
-                                        <div style={{ fontSize: 11, color: '#6b7080', marginTop: 2 }}>{item.sub}</div>
-                                    </div>
-                                    <Toggle value={!!notify[item.key]} onChange={v => setNotify(p => ({ ...p, [item.key]: v }))} />
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-                )}
-
                 {/* GIAO DIỆN */}
                 {activeTab === 'appearance' && (
                     <div style={S.section}>
@@ -392,33 +346,6 @@ export default function StaffSettings({ onClose }) {
                     </div>
                 )}
 
-                {/* BẢO MẬT */}
-                {activeTab === 'security' && (
-                    <div style={S.section}>
-                        <SectionHeader icon={Lock} title="Đổi mật khẩu" color="#ef4444" />
-                        <div style={S.sectionBody}>
-                            <div style={{ padding: '10px 12px', background: 'rgba(245,158,11,0.07)', borderRadius: 8, marginBottom: 16, fontSize: 12, color: '#9ca3af', display: 'flex', alignItems: 'center', gap: 8 }}>
-                                <Info size={13} color="#f59e0b" /> Mật khẩu phải ít nhất 6 ký tự
-                            </div>
-                            {['newPassword', 'confirmPassword'].map((field, i) => (
-                                <div key={field} style={S.fullRow}>
-                                    <label style={S.label}>{['Mật khẩu mới', 'Xác nhận mật khẩu mới'][i]}</label>
-                                    <div style={{ position: 'relative' }}>
-                                        <input style={{ ...S.input, paddingRight: 40 }} type={showPw[field] ? 'text' : 'password'}
-                                            value={pwForm[field]} onChange={e => setPwForm(p => ({ ...p, [field]: e.target.value }))} placeholder="••••••••" />
-                                        <button onClick={() => setShowPw(p => ({ ...p, [field]: !p[field] }))}
-                                            style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: '#6b7080', cursor: 'pointer' }}>
-                                            {showPw[field] ? <EyeOff size={14} /> : <Eye size={14} />}
-                                        </button>
-                                    </div>
-                                </div>
-                            ))}
-                            <button onClick={handleChangePassword} style={{ ...S.saveBtn, width: 'fit-content' }}>
-                                <Lock size={13} /> Đổi mật khẩu
-                            </button>
-                        </div>
-                    </div>
-                )}
             </div>
 
             {toast && <Toast msg={toast.msg} type={toast.type} onClose={() => setToast(null)} />}

@@ -8,7 +8,7 @@ const fmt = (n) => Number(n || 0).toLocaleString('vi-VN')
 export default function CheckoutPage() {
     const navigate = useNavigate()
     const [searchParams] = useSearchParams()
-    const { cart, cartTotal, updateQuantity, removeFromCart, clearCart, createOrder, user, axiosInstance } = useApp()
+    const { cart, cartTotal, updateQuantity, removeFromCart, clearCart, createOrder, createOrderOnly, user, axiosInstance } = useApp()
 
     const [loading, setLoading] = useState(false)
     const [vnpayLoading, setVnpayLoading] = useState(false)
@@ -21,12 +21,19 @@ export default function CheckoutPage() {
         const vnpayResult = searchParams.get('vnpay')
         const txnRef = searchParams.get('txnRef')
         const code = searchParams.get('code')
+        const errParam = searchParams.get('error')
+
         if (vnpayResult === 'success') {
-            clearCart()   // ✅ xóa giỏ hàng sau khi VNPay thành công
+            // ✅ Clear cart SAU KHI VNPay xác nhận thành công
+            clearCart()
             setDone({ vnpay: true, transactionRef: txnRef })
         } else if (vnpayResult === 'failed') {
-            setError(code === '24' ? 'Bạn đã hủy giao dịch VNPay.' : `Thanh toán VNPay thất bại (mã lỗi: ${code})`)
-        } else if (searchParams.get('error')) {
+            // ❌ Thanh toán thất bại — KHÔNG clear cart, để user thử lại
+            const msg = code === '24'
+                ? 'Bạn đã hủy giao dịch VNPay. Đơn hàng vẫn còn, bạn có thể thanh toán lại.'
+                : `Thanh toán VNPay thất bại (mã lỗi: ${code}). Vui lòng thử lại.`
+            setError(msg)
+        } else if (errParam) {
             setError('Có lỗi xảy ra khi xử lý thanh toán. Vui lòng thử lại.')
         }
     }, []) // chỉ chạy 1 lần khi mount
@@ -35,6 +42,7 @@ export default function CheckoutPage() {
         if (cart.length === 0) return
         setError(''); setLoading(true)
         try {
+            // createOrder = tạo order + clear cart (COD)
             const order = await createOrder()
             setDone(order)
         } catch (err) {
@@ -43,27 +51,38 @@ export default function CheckoutPage() {
     }
 
     const handleVNPay = async () => {
-        if (cart.length === 0 || !user?.id) return
+        if (cart.length === 0 || !user?.id) {
+            setError('Vui lòng đăng nhập trước khi thanh toán')
+            return
+        }
         setError(''); setVnpayLoading(true)
         try {
-            // ✅ Tạo order trước
-            const order = await createOrder()
+            // ✅ Bước 1: Tạo order KHÔNG clear cart (cart sẽ clear sau khi VNPay thành công)
+            const order = await createOrderOnly()
 
-            // ✅ Lấy URL thanh toán VNPay
+            // Lấy total từ order trả về (ưu tiên) hoặc cartTotal
+            const amount = Number(order?.total ?? order?.totalAmount ?? cartTotal)
+            if (!amount || amount <= 0) throw new Error('Số tiền không hợp lệ')
+
+            // ✅ Bước 2: Lấy URL thanh toán VNPay từ payment-service
             const res = await axiosInstance.post('/api/payments/vnpay/create', {
                 orderId: order.id,
                 userId: user.id,
-                amount: Number(order.total ?? order.totalAmount ?? cartTotal),
-                returnUrl: `${window.location.origin}/checkout?vnpay=success&txnRef=`,
-                cancelUrl: `${window.location.origin}/checkout?vnpay=failed&code=24`,
+                amount: amount,
             })
 
+            // Lấy paymentUrl từ response (hỗ trợ nhiều cấu trúc)
             const paymentUrl = res.data?.data?.paymentUrl
                 || res.data?.paymentUrl
                 || res.data?.data?.url
                 || res.data?.url
 
             if (!paymentUrl) throw new Error('Không nhận được URL thanh toán từ server')
+
+            // ✅ Lưu orderId để có thể hiển thị sau khi thanh toán
+            sessionStorage.setItem('vnpay_pending_orderId', String(order.id))
+
+            // ✅ Redirect sang VNPay
             window.location.href = paymentUrl
         } catch (err) {
             setError(err.response?.data?.message || err.message || 'Không thể tạo thanh toán VNPay')

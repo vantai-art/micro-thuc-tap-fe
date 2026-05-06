@@ -1,6 +1,6 @@
 // src/pages/UserOrdersPage.jsx
 import React, { useState, useEffect, useCallback } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useApp } from '../contexts/AppContext'
 import { useSocket } from '../contexts/SocketContext' // THÊM IMPORT SOCKET
 
@@ -31,6 +31,7 @@ const FILTERS = [
 
 export default function UserOrdersPage() {
     const navigate = useNavigate()
+    const [searchParams] = useSearchParams()
     const { user, axiosInstance, showToast } = useApp()
     const { socket, isConnected } = useSocket() // THÊM SOCKET HOOK
     const [orders, setOrders] = useState([])
@@ -38,6 +39,7 @@ export default function UserOrdersPage() {
     const [error, setError] = useState(null)
     const [filter, setFilter] = useState('ALL')
     const [payingId, setPayingId] = useState(null)
+    const [vnpayNotif, setVnpayNotif] = useState(null) // Thông báo kết quả VNPay
     const [lastUpdate, setLastUpdate] = useState(Date.now())
     const [notification, setNotification] = useState(null)
 
@@ -63,6 +65,41 @@ export default function UserOrdersPage() {
 
     // Load orders lần đầu
     useEffect(() => { loadOrders() }, [loadOrders])
+
+    // ─── XỬ LÝ CALLBACK TỪ VNPAY ───────────────────────────────
+    useEffect(() => {
+        const vnpayResult = searchParams.get('vnpay')
+        const txnRef = searchParams.get('txnRef')
+        const code = searchParams.get('code')
+        const errParam = searchParams.get('error')
+
+        if (vnpayResult === 'success') {
+            setVnpayNotif({
+                type: 'success',
+                message: `✅ Thanh toán VNPay thành công! Mã giao dịch: ${txnRef || 'N/A'}`,
+            })
+            // Reload orders để cập nhật trạng thái PAID
+            setTimeout(() => loadOrders(), 800)
+            sessionStorage.removeItem('vnpay_pending_orderId')
+        } else if (vnpayResult === 'failed') {
+            setVnpayNotif({
+                type: 'error',
+                message: code === '24'
+                    ? '⚠️ Bạn đã hủy giao dịch VNPay. Đơn hàng vẫn chờ thanh toán.'
+                    : `❌ Thanh toán VNPay thất bại (mã: ${code}). Vui lòng thử lại.`,
+            })
+        } else if (errParam) {
+            setVnpayNotif({
+                type: 'error',
+                message: '❌ Có lỗi khi xử lý thanh toán. Vui lòng thử lại.',
+            })
+        }
+
+        // Tự ẩn sau 6 giây
+        if (vnpayResult || errParam) {
+            setTimeout(() => setVnpayNotif(null), 6000)
+        }
+    }, []) // chỉ chạy 1 lần khi mount
 
     // ─── REAL-TIME ORDER UPDATE FROM SOCKET ───
     useEffect(() => {
@@ -154,16 +191,21 @@ export default function UserOrdersPage() {
                 userId: user.id,
                 amount: Number(order.total),
             })
-            const { paymentUrl } = res.data?.data || res.data
+            const paymentUrl = res.data?.data?.paymentUrl
+                || res.data?.paymentUrl
+                || res.data?.data?.url
+                || res.data?.url
+
             if (paymentUrl) {
-                // Lưu thông tin để xử lý sau khi thanh toán
-                sessionStorage.setItem('pendingOrderId', order.id)
+                // Lưu orderId để xử lý sau khi thanh toán xong
+                sessionStorage.setItem('vnpay_pending_orderId', String(order.id))
+                sessionStorage.setItem('vnpay_return_page', 'my-orders')
                 window.location.href = paymentUrl
             } else {
-                alert('Không nhận được URL thanh toán')
+                showRealTimeNotif('❌ Không nhận được URL thanh toán', 'error')
             }
         } catch (err) {
-            alert('Lỗi: ' + (err.response?.data?.message || err.message))
+            showRealTimeNotif('❌ Lỗi: ' + (err.response?.data?.message || err.message), 'error')
         } finally { setPayingId(null) }
     }
 
@@ -213,6 +255,34 @@ export default function UserOrdersPage() {
                         notification.type === 'error' ? '#e74c3c' : '#f39c12',
                 }}>
                     <span>{notification.message}</span>
+                </div>
+            )}
+
+            {/* VNPay callback notification */}
+            {vnpayNotif && (
+                <div style={{
+                    position: 'fixed',
+                    top: 80,
+                    left: '50%',
+                    transform: 'translateX(-50%)',
+                    zIndex: 200,
+                    background: vnpayNotif.type === 'success' ? '#f0fdf4' : '#fff5f5',
+                    border: `1.5px solid ${vnpayNotif.type === 'success' ? '#4ade80' : '#f87171'}`,
+                    borderRadius: 12,
+                    padding: '14px 24px',
+                    boxShadow: '0 8px 24px rgba(0,0,0,0.12)',
+                    fontSize: 14,
+                    fontWeight: 600,
+                    color: vnpayNotif.type === 'success' ? '#166534' : '#991b1b',
+                    maxWidth: 480,
+                    textAlign: 'center',
+                    animation: 'slideInRight 0.3s ease',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                }}>
+                    <span>{vnpayNotif.message}</span>
+                    <button onClick={() => setVnpayNotif(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 18, lineHeight: 1, color: 'inherit', opacity: 0.6, marginLeft: 8 }}>×</button>
                 </div>
             )}
 
@@ -639,4 +709,3 @@ const TOAST_STYLES = `
 @keyframes statusPulse { 0% { transform: scale(1); background: rgba(46,204,113,0.3) } 50% { transform: scale(1.02); background: rgba(46,204,113,0.5) } 100% { transform: scale(1); background: transparent } }
 @keyframes flashOut { 0% { background: rgba(46,204,113,0.2) } 100% { background: rgba(46,204,113,0) } }
 `
-

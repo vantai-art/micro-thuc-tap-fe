@@ -19,7 +19,12 @@ import AdminLayoutWrapper from './pages/admin/AdminLayoutWrapper'
 
 import StaffLoginPage from './pages/staff/StaffLoginPage'
 import StaffPage from './pages/staff/StaffPage'
+import StaffDashboard from './pages/staff/StaffDashboard'   // ← MỚI
+import CustomerOrderPage from './pages/CustomerOrderPage'   // ← MỚI
+
 import { SocketProvider } from './contexts/SocketContext'
+import ForgotPasswordPage from './pages/ForgotPasswordPage'
+import ResetPasswordPage from './pages/ResetPasswordPage'
 
 // ─── Protected Routes ────────────────────────────────────────────
 function ProtectedUserRoute({ children }) {
@@ -68,10 +73,11 @@ function StaffLoginGuard({ children }) {
 function AppRoutes() {
     return (
         <>
-            {/* Header ẩn ở admin/staff */}
+            {/* Header ẩn ở admin/staff/order */}
             <Routes>
                 <Route path="/admin/*" element={null} />
                 <Route path="/staff/*" element={null} />
+                <Route path="/order" element={null} />     {/* ← ẩn header ở trang khách */}
                 <Route path="*" element={<Header />} />
             </Routes>
 
@@ -85,6 +91,9 @@ function AppRoutes() {
                 <Route path="/auth" element={
                     <UserAuthGuard><UserAuthPage /></UserAuthGuard>
                 } />
+
+                <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+                <Route path="/reset-password" element={<ResetPasswordPage />} />
 
                 {/* User protected */}
                 <Route path="/checkout" element={
@@ -102,7 +111,7 @@ function AppRoutes() {
                     <AdminLoginGuard><AdminLogin /></AdminLoginGuard>
                 } />
 
-                {/* Admin panel — tất cả pages */}
+                {/* Admin panel */}
                 <Route path="/admin" element={<ProtectedAdminRoute><AdminLayoutWrapper page="dashboard" /></ProtectedAdminRoute>} />
                 <Route path="/admin/dashboard" element={<ProtectedAdminRoute><AdminLayoutWrapper page="dashboard" /></ProtectedAdminRoute>} />
                 <Route path="/admin/products" element={<ProtectedAdminRoute><AdminLayoutWrapper page="products" /></ProtectedAdminRoute>} />
@@ -116,18 +125,25 @@ function AppRoutes() {
                 <Route path="/admin/promotions" element={<ProtectedAdminRoute><AdminLayoutWrapper page="promotions" /></ProtectedAdminRoute>} />
                 <Route path="/admin/settings" element={<ProtectedAdminRoute><AdminLayoutWrapper page="settings" /></ProtectedAdminRoute>} />
 
-                {/* Staff */}
+                {/* Staff cũ — GIỮ NGUYÊN */}
                 <Route path="/staff/login" element={
                     <StaffLoginGuard><StaffLoginPage /></StaffLoginGuard>
                 } />
                 <Route path="/staff" element={
                     <ProtectedStaffRoute><StaffPage /></ProtectedStaffRoute>
                 } />
-
-                {/* 404 */}
                 <Route path="/staff/settings" element={
                     <ProtectedStaffRoute><StaffSettings /></ProtectedStaffRoute>
-                }/>
+                } />
+
+                {/* ── Dine-in MỚI — TÁCH BIỆT hoàn toàn ── */}
+                <Route path="/staff/dashboard" element={
+                    <ProtectedStaffRoute><StaffDashboard /></ProtectedStaffRoute>
+                } />
+                {/* Khách scan QR → không cần đăng nhập */}
+                <Route path="/order" element={<CustomerOrderPage />} />
+
+                {/* 404 */}
                 <Route path="*" element={
                     <div style={{
                         minHeight: '80vh', display: 'flex', alignItems: 'center',

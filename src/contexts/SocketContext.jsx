@@ -2,13 +2,15 @@
 // FIX 1: Socket chỉ khởi tạo MỘT LẦN (không phụ thuộc vào objects user/staffUser/customerUser)
 //         → tránh reconnect liên tục mỗi khi AppContext re-render
 // FIX 2: Dùng useRef để lưu user IDs thay vì object → dependency ổn định hơn
-// FIX 3: Thêm polling fallback khi WebSocket không available
+// FIX 3: reconnectionAttempts=3, delay=10s → không spam console khi server chưa chạy
 import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react'
 import io from 'socket.io-client'
 import { useApp } from './AppContext'
 
 const SocketContext = createContext(null)
-const SOCKET_URL = process.env.REACT_APP_SOCKET_URL || 'http://localhost:8080'
+
+// FIX: Kết nối TRỰC TIẾP tới Socket.IO server (port 5000), KHÔNG qua API Gateway (8080).
+const SOCKET_URL = process.env.REACT_APP_SOCKET_URL || 'http://localhost:5000'
 
 export const useSocket = () => {
     const context = useContext(SocketContext)
@@ -23,6 +25,8 @@ export const SocketProvider = ({ children }) => {
     const [liveOrders, setLiveOrders] = useState([])
     const [liveNotifications, setLiveNotifications] = useState([])
     const socketRef = useRef(null)
+    // FIX: flag để chỉ log warning 1 lần duy nhất
+    const errorLoggedRef = useRef(false)
 
     // FIX: Dùng ref để lưu thông tin user → tránh effect phụ thuộc vào object reference
     const userInfoRef = useRef({ user, staffUser, customerUser })
@@ -32,19 +36,23 @@ export const SocketProvider = ({ children }) => {
 
     // FIX: Chỉ tạo socket MỘT LẦN duy nhất — không có dependencies thay đổi
     useEffect(() => {
+        // FIX Strict Mode: nếu ref đã có socket đang active → skip (tránh double-create)
+        if (socketRef.current && socketRef.current.connected) return
+
         const newSocket = io(SOCKET_URL, {
-            withCredentials: true,
-            // FIX: Thử polling trước rồi mới upgrade lên websocket
-            transports: ['polling', 'websocket'],
+            withCredentials: false,
+            transports: ['polling', 'websocket'], // polling trước → ổn định hơn khi WS bị block
             reconnection: true,
-            reconnectionAttempts: 5,
-            reconnectionDelay: 2000,
-            reconnectionDelayMax: 10000,
-            timeout: 5000,
+            reconnectionAttempts: 3,   // thử 3 lần rồi dừng hẳn, không spam console
+            reconnectionDelay: 10000,  // chờ 10s giữa các lần thử
+            reconnectionDelayMax: 30000,
+            timeout: 8000,
+            autoConnect: true,
         })
 
         newSocket.on('connect', () => {
             console.log('🔌 Socket connected:', newSocket.id)
+            errorLoggedRef.current = false // reset flag khi kết nối thành công
             setIsConnected(true)
 
             const { user: u, staffUser: su, customerUser: cu } = userInfoRef.current
@@ -63,10 +71,17 @@ export const SocketProvider = ({ children }) => {
         })
 
         newSocket.on('connect_error', (err) => {
-            if (newSocket.io._reconnectionAttempts <= 1) {
-                console.warn('Socket server chưa chạy hoặc không kết nối được:', err.message)
+            // FIX: Chỉ log 1 lần duy nhất, không spam console
+            if (!errorLoggedRef.current) {
+                console.warn('⚠️ Socket server (port 5000) chưa chạy. Real-time không khả dụng:', err.message)
+                errorLoggedRef.current = true
             }
             setIsConnected(false)
+        })
+
+        // FIX: Khi hết số lần retry → log thông báo rõ ràng, ngừng hẳn
+        newSocket.io.on('reconnect_failed', () => {
+            console.info('ℹ️ Socket: Đã ngừng thử kết nối lại. Real-time tính năng không khả dụng.')
         })
 
         socketRef.current = newSocket

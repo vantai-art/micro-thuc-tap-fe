@@ -9,7 +9,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react'
 import axios from 'axios'
 
-const BASE_URL = 'http://localhost:8080'
+const BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8080'
 
 const axiosInstance = axios.create({
     baseURL: BASE_URL,
@@ -258,7 +258,18 @@ export function AppProvider({ children }) {
         setTimeout(() => setToast(null), 3000)
     }, [])
 
-    // ── Create order (cho customer) ────────────────────────────────
+    // ── Create order (chỉ tạo order, KHÔNG clear cart — dùng cho VNPay) ──
+    const createOrderOnly = useCallback(async () => {
+        if (!customerUser) throw new Error('Chưa đăng nhập')
+        if (cart.length === 0) throw new Error('Giỏ hàng trống')
+        const cartItems = cart.map(item => ({
+            productId: item.id, productName: item.name ?? '', price: item.price, quantity: item.quantity,
+        }))
+        const res = await axiosInstance.post(`/order/${customerUser.id}/direct`, cartItems)
+        return res.data
+    }, [customerUser, cart, axiosInstance])
+
+    // ── Create order COD (tạo order + clear cart — dùng cho thanh toán khi nhận hàng) ──
     const createOrder = useCallback(async () => {
         if (!customerUser) throw new Error('Chưa đăng nhập')
         if (cart.length === 0) throw new Error('Giỏ hàng trống')
@@ -268,7 +279,7 @@ export function AppProvider({ children }) {
         const res = await axiosInstance.post(`/order/${customerUser.id}/direct`, cartItems)
         clearCart(); showToast('Đặt hàng thành công!', 'success')
         return res.data
-    }, [customerUser, cart, clearCart, showToast])
+    }, [customerUser, cart, clearCart, showToast, axiosInstance])
 
     // ─── Create table order (cho staff) ────────────────────────────
     const createTableOrder = useCallback(async (tableId, customerName, items) => {
@@ -339,6 +350,7 @@ export function AppProvider({ children }) {
         setCart,
         // Orders
         createOrder,
+        createOrderOnly,
         createTableOrder,
         // Utils
         showToast,

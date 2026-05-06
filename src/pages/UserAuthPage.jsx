@@ -204,6 +204,17 @@ export default function UserAuthPage() {
                                     onChange={e => setLg({ ...lg, userPassword: e.target.value })}
                                     placeholder="Nhập mật khẩu" required disabled={loading} />
 
+                                {/* Link quên mật khẩu */}
+                                <div style={{ textAlign: 'right', marginTop: -6, marginBottom: 16 }}>
+                                    <span
+                                        onClick={() => navigate('/forgot-password')}
+                                        style={{ color: '#e67e22', fontSize: 13, cursor: 'pointer', fontWeight: 600 }}
+                                        className="link-hover"
+                                    >
+                                        Quên mật khẩu?
+                                    </span>
+                                </div>
+
                                 <button type="submit" disabled={loading} style={{ ...s.submitBtn, opacity: loading ? 0.7 : 1, cursor: loading ? 'not-allowed' : 'pointer' }} className={loading ? '' : 'btn-hover'}>
                                     {loading ? <><span className="spinner" /> Đang đăng nhập...</> : 'Đăng nhập →'}
                                 </button>

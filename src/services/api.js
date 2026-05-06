@@ -1,12 +1,20 @@
 // src/services/api.js
 import axios from 'axios'
 import Logger from '../utils/logger'
-const BASE = 'http://localhost:8080'
+const BASE = process.env.REACT_APP_API_URL || 'http://localhost:8080'
 
 export const http = axios.create({
     baseURL: BASE,
     withCredentials: true,
     timeout: 10000,
+})
+
+// FIX: Instance không cần credentials — dùng cho /auth/** (forgot/reset password)
+// withCredentials: true + CORS "*" = browser block hoàn toàn → lỗi undefined
+export const httpPublic = axios.create({
+    baseURL: BASE,
+    withCredentials: false,
+    timeout: 15000,
 })
 
 // Interceptor request
@@ -84,6 +92,12 @@ export const setCartId = (id) => localStorage.setItem('cartId', String(id))
 export const login = (userName, userPassword) =>
     http.post('/login', { userName, userPassword })
 export const register = (body) => http.post('/registration', body)
+export const forgotPassword = (email) =>
+    httpPublic.post('/auth/forgot-password', { email })
+export const validateResetToken = (token) =>
+    httpPublic.get('/auth/validate-token', { params: { token } })
+export const resetPassword = (token, newPassword) =>
+    httpPublic.post('/auth/reset-password', { token, newPassword })
 export const getUsers = () => http.get('/users')
 export const getUserByName = (name) => http.get('/users', { params: { name } })
 export const getUserById = (id) => http.get(`/users/${id}`)
