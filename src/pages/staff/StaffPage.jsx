@@ -7,7 +7,7 @@ import { useAppContext } from '../../contexts/AppContext'
 import {
     ShoppingCart, Search, LogOut, X, Settings,
     Loader2, RefreshCw, Receipt, Coffee, Grid3X3, List,
-    AlertCircle, Package, Plus,
+    AlertCircle, Package, Plus, LayoutDashboard,
 } from 'lucide-react'
 
 import { PAY_METHODS } from '../../constants/payMethods'
@@ -24,9 +24,40 @@ export default function StaffPage() {
     const {
         staffUser: user, logout,
         products: ctxProducts,
-        cart, addToCart, updateQuantity, removeFromCart, clearCart, cartTotal,
         axiosInstance,
     } = useAppContext()
+
+    // ── Giỏ hàng riêng cho staff (local state, KHÔNG dùng AppContext cart) ──
+    const [cart, setCart] = useState(() => {
+        try { const s = localStorage.getItem('staff_local_cart'); return s ? JSON.parse(s) : [] }
+        catch { return [] }
+    })
+
+    useEffect(() => {
+        localStorage.setItem('staff_local_cart', JSON.stringify(cart))
+    }, [cart])
+
+    const addToCart = (product, qty = 1) => {
+        setCart(prev => {
+            const existing = prev.find(i => i.id === product.id)
+            if (existing) return prev.map(i => i.id === product.id ? { ...i, quantity: i.quantity + qty } : i)
+            return [...prev, { ...product, quantity: qty }]
+        })
+    }
+
+    const removeFromCart = (id) => setCart(prev => prev.filter(i => i.id !== id))
+
+    const updateQuantity = (id, qty) => {
+        if (qty <= 0) removeFromCart(id)
+        else setCart(prev => prev.map(i => i.id === id ? { ...i, quantity: qty } : i))
+    }
+
+    const clearCart = () => {
+        setCart([])
+        localStorage.removeItem('staff_local_cart')
+    }
+
+    const cartTotal = cart.reduce((s, i) => s + (i.price * i.quantity), 0)
 
     const staffName = user?.userDetails?.fullName || user?.userName || 'Nhân viên'
 
@@ -180,12 +211,39 @@ export default function StaffPage() {
                             <div style={{ color: '#f0ede6', fontWeight: 700, fontSize: 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{staffName}</div>
                             <div style={{ color: '#555', fontSize: 11 }}>Nhân viên · {time}</div>
                         </div>
+
+                        {/* Nút HĐ */}
                         <button onClick={() => { setShowBills(true); fetchBills() }} style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 8, padding: '6px 10px', color: '#888', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, fontWeight: 600 }}>
                             <Receipt size={13} /> HĐ
                         </button>
-                        <button onClick={() => navigate('/staff/settings')} style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 8, padding: '6px 10px', color: '#888', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, fontWeight: 600, title: 'Cài đặt' }}>
+
+                        {/* ── Nút Dashboard ── */}
+                        <button
+                            onClick={() => navigate('/staff/dashboard')}
+                            title="Đến Dashboard"
+                            style={{
+                                background: 'rgba(14,165,233,0.08)',
+                                border: '1px solid rgba(14,165,233,0.2)',
+                                borderRadius: 8,
+                                padding: '6px 10px',
+                                color: '#0ea5e9',
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 5,
+                                fontSize: 11,
+                                fontWeight: 600,
+                            }}
+                        >
+                            <LayoutDashboard size={13} /> Dashboard
+                        </button>
+
+                        {/* Nút Settings */}
+                        <button onClick={() => navigate('/staff/settings')} style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 8, padding: '6px 10px', color: '#888', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, fontWeight: 600 }}>
                             <Settings size={13} />
                         </button>
+
+                        {/* Nút Logout */}
                         <button onClick={() => { if (window.confirm('Đăng xuất?')) { logout('ROLE_STAFF'); navigate('/staff/login') } }} style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 8, padding: '6px 10px', color: '#ef4444', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, fontWeight: 600 }}>
                             <LogOut size={13} />
                         </button>

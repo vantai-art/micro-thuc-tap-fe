@@ -12,7 +12,7 @@ function getStompClient() {
     const SockJS = require("sockjs-client");
     const { Client } = require("@stomp/stompjs");
 
-    const WS_URL = process.env.REACT_APP_WS_URL || "http://localhost:8813";
+    const WS_URL = process.env.REACT_APP_SOCKET_URL || process.env.REACT_APP_WS_URL || "http://localhost:5000";
 
     _client = new Client({
         webSocketFactory: () => new SockJS(`${WS_URL}/ws`),

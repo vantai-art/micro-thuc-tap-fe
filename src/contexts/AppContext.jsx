@@ -263,7 +263,10 @@ export function AppProvider({ children }) {
         if (!customerUser) throw new Error('Chưa đăng nhập')
         if (cart.length === 0) throw new Error('Giỏ hàng trống')
         const cartItems = cart.map(item => ({
-            productId: item.id, productName: item.name ?? '', price: item.price, quantity: item.quantity,
+            productId: item.id ?? null,
+            productName: item.name ?? item.productName ?? 'Sản phẩm',
+            price: Number(item.price ?? 0),
+            quantity: Number(item.quantity ?? 1),
         }))
         const res = await axiosInstance.post(`/order/${customerUser.id}/direct`, cartItems)
         return res.data
@@ -274,7 +277,10 @@ export function AppProvider({ children }) {
         if (!customerUser) throw new Error('Chưa đăng nhập')
         if (cart.length === 0) throw new Error('Giỏ hàng trống')
         const cartItems = cart.map(item => ({
-            productId: item.id, productName: item.name ?? '', price: item.price, quantity: item.quantity,
+            productId: item.id ?? null,
+            productName: item.name ?? item.productName ?? 'Sản phẩm',
+            price: Number(item.price ?? 0),
+            quantity: Number(item.quantity ?? 1),
         }))
         const res = await axiosInstance.post(`/order/${customerUser.id}/direct`, cartItems)
         clearCart(); showToast('Đặt hàng thành công!', 'success')

@@ -43,10 +43,11 @@ function ImagePreviewModal({ src, productName, onClose }) {
 const EMPTY = { productName: '', discription: '', price: '', availability: '', category: '', imageUrl: '' }
 
 export default function AdminProducts() {
-    const { adminUser } = useAppContext()
+    const { adminUser, staffUser } = useAppContext()
+    const currentUser = adminUser || staffUser
     const { broadcastProductUpdate } = useSocket()
-    const performedBy = adminUser?.userName || 'unknown'
-    const role = adminUser?.role === 'ROLE_ADMIN' ? 'ADMIN' : 'STAFF'
+    const performedBy = currentUser?.userName || 'unknown'
+    const role = currentUser?.role === 'ROLE_ADMIN' ? 'ADMIN' : 'STAFF'
     const logHeaders = { 'X-Performed-By': performedBy, 'X-Role': role }
 
     const [products, setProducts] = useState([])

@@ -178,24 +178,12 @@ export const removeFromCart = (cartId, productId) =>
 // ─── ORDER SERVICE (FIXED) ────────────────────────────────────────
 // Thử nhiều endpoint khác nhau để tương thích với backend
 export const getOrders = () => http.get('/order')
-export const getOrdersAlt = () => http.get('/api/orders') // Alternative endpoint
-export const getOrdersV2 = () => http.get('/orders') // Another alternative
+// FIX: Chỉ dùng đúng endpoint /order (khớp với OrderController backend)
+// getOrdersAlt và getOrdersV2 đã xóa vì backend không có /api/orders hoặc /orders
 
-// Smart fetch - tự động thử các endpoint
+// Smart fetch — chỉ dùng /order (endpoint duy nhất đúng)
 export const getOrdersSmart = async () => {
-    const endpoints = ['/order', '/api/orders', '/orders']
-    let lastError = null
-
-    for (const endpoint of endpoints) {
-        try {
-            const response = await http.get(endpoint)
-            return response
-        } catch (error) {
-            lastError = error
-            console.warn(`Endpoint ${endpoint} failed:`, error.response?.status)
-        }
-    }
-    throw lastError
+    return http.get('/order')
 }
 
 export const getOrderById = (id) => http.get(`/order/${id}`)

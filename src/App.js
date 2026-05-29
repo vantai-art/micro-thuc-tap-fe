@@ -25,6 +25,7 @@ import CustomerOrderPage from './pages/CustomerOrderPage'   // ← MỚI
 import { SocketProvider } from './contexts/SocketContext'
 import ForgotPasswordPage from './pages/ForgotPasswordPage'
 import ResetPasswordPage from './pages/ResetPasswordPage'
+import AIChatWidget from './components/AIChatWidget'
 
 // ─── Protected Routes ────────────────────────────────────────────
 function ProtectedUserRoute({ children }) {
@@ -170,6 +171,7 @@ export default function App() {
             <AppProvider>
                 <SocketProvider>
                     <AppRoutes />
+                    <AIChatWidget />
                 </SocketProvider>
             </AppProvider>
         </BrowserRouter>
